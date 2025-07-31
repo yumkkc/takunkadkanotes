@@ -7,3 +7,5 @@ I like PLT and mainly write about my various notes/learning from books, articles
 [[./plainotes.org][Programming Language Application and Interpretation (PLAI) book]]
 
 [[./SF_logicalfoundations.org][Software foundations book - Logical foundations]]
+
+[[./tiger.org][Tiger Book - Appel]]
