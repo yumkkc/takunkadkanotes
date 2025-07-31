@@ -12,6 +12,27 @@
 <body>
 <div id="content" class="content">
 <h1 class="title">Tiger</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#orgd004d63">1. Chapter 7 : Translation to Intermediate Code</a>
+<ul>
+<li><a href="#org2173021">1.1. Intermediate Representation Trees</a></li>
+<li><a href="#orgea11e98">1.2. Translation into trees</a></li>
+<li><a href="#org3abb144">1.3. SIMPLE VARIABLES</a>
+<ul>
+<li><a href="#org1d63ff4">1.3.1. Following static links</a></li>
+</ul>
+</li>
+<li><a href="#org8fd2eaf">1.4. Array</a></li>
+<li><a href="#org123d8bd">1.5. ARITHMETIC</a></li>
+<li><a href="#org7688f7f">1.6. CONDITIONS</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
 <p>
 This notes is about tiger book from Appel
 </p>
@@ -20,6 +41,179 @@ This notes is about tiger book from Appel
 the code I wrote for the compiler tiger language is present here:
 <a href="https://github.com/yumkkc/tigerlang">https://github.com/yumkkc/tigerlang</a>
 </p>
+<div id="outline-container-orgd004d63" class="outline-2">
+<h2 id="orgd004d63"><span class="section-number-2">1.</span> Chapter 7 : Translation to Intermediate Code</h2>
+<div class="outline-text-2" id="text-1">
+<ul class="org-ul">
+<li>The frontend of the compiler does the lexical analysis, parsing and semantic analysis.</li>
+<li>the semantic analysis part of the compiler must convert to IR (intermediate representation)</li>
+<li>The back-end does the <i>IR</i> optimisations and generation of machine-specific instructions</li>
+
+<li>IR is a Abstract machine language that can express the target-machine oeprations without commiting to the machine-specific lang.</li>
+<li>It is also independent of the source langauge</li>
+
+<li>A portable compiler translates the source language into IR and then translates the IR into the machine language</li>
+</ul>
+</div>
+<div id="outline-container-org2173021" class="outline-3">
+<h3 id="org2173021"><span class="section-number-3">1.1.</span> Intermediate Representation Trees</h3>
+<div class="outline-text-3" id="text-1-1">
+<ul class="org-ul">
+<li>an overately complicate structure in AST like records, array subscripts etc. cannot be directly transalted into IR.</li>
+<li>IR will basically represent extremely simple constructs like Fetch, store,add, move or jump.</li>
+<li>Then any chunky piece of AST can be translated into just the right set of abstract machine instructions.</li>
+<li>Then the Abstract machine instructions can be clumped together to form "real" machine instructions</li>
+</ul>
+
+
+<div class="org-src-container">
+<pre class="src src-sml">
+signature TREE =
+sig
+    datatype exp = CONST of int (* integer constant i *)
+           | NAME of Temp.label (* corresponding to asm label *)
+           | TEMP of Temp.temp (* similar to register in real machine but in this case its infinite *)
+           | BINOP of binop * exp * exp (* just an operation *)
+           | MEM of exp (* wordSize byte of memory starting at exp *)
+           | CALL of exp * exp list (* call to exp with exp list arguments *)
+           | ESEQ of stm * exp (* stat is executed for side effects. exp is returned *)
+
+    and stm = MOVE of exp * exp (* can have several variant -&gt;
+                                     MOVE (TEMP t, e) =&gt; evaluates e and moves to t (register)
+                                     MOVE (MEM(e1), e2) =&gt; evaluate e1, yielding address a. Then evalute e2 and store the result into wordsize bytes of memory starting at a.
+                                 *)
+      | EXP of exp (* evaluate e and discard the result *)
+      | JUMP of exp * Temp.label list (* transfer control to exp
+                                       JUMP(NAME(lab), [lab]) =&gt; jumps directly to lab
+                                      JUMP(e, [lab1, lab2]) =&gt; evalute e and gets the address. list here specifies which  all label can e jump to
+                                       *)
+      | CJUMP of relop * exp * exp * Temp.label * Temp.label
+                                                      (* evaluates exp1 to a, exp2 to b
+                                                      compare a and b
+                                                      then if true, then jump to temp.label1
+                                                      else label2
+                                                       *)
+      | SEQ of stm * stm (* stm1 follow wed by stm2 *)
+      | LABEL of Temp.label (* define a constant name n to be the current machine code address. *)
+
+    and  binop = PLUS | MINUS |MUL | DIV
+       | AND | OR | LSHIFT | RSHIFT | ARSHIFT | XOR
+
+    and relop = EQ | NE | LT | GT | LE | GE
+      | ULT | ULE | UGT | UGE
+end
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-orgea11e98" class="outline-3">
+<h3 id="orgea11e98"><span class="section-number-3">1.2.</span> Translation into trees</h3>
+<div class="outline-text-3" id="text-1-2">
+<ul class="org-ul">
+<li>The Absyn.exp should be logically be translated to Tree.exp? NO!! Only the certain expressions are to be converted to Tree.exp</li>
+<li>These are the ones that compute the value.</li>
+<li>The ones which do not compute the values are to be put to Tree.stm</li>
+<li><p>
+Expressiosn with boolean values, such as a&gt;b, might be represented as a conditional jump - a combination of Tree.stm and a pair of destinations represented by Temp.labels
+</p>
+
+<p>
+Threfore, in translate module we can:-
+</p></li>
+</ul>
+
+
+<div class="org-src-container">
+<pre class="src src-sml">datatype exp = Ex of Tree.exp (*  represents expressions *)
+       | Nx of Tree.stm (* No result *)
+       | Cx of Temp.label * Temp.label -&gt; Tree.stm
+                                              (* takes two labels and generats a statement which gives stm which jumps to one of these two*)
+</pre>
+</div>
+
+<p>
+example:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-nil">a&gt;b|c&lt;d
+
+Cx (fn (t, f)   =&gt; SEQ (CJUMP (GT, a, b, t, z),
+                       SEQ (LABEL z, CJUMP(LT, c, d, t, f))))
+
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org3abb144" class="outline-3">
+<h3 id="org3abb144"><span class="section-number-3">1.3.</span> SIMPLE VARIABLES</h3>
+<div class="outline-text-3" id="text-1-3">
+<div class="org-src-container">
+<pre class="src src-text">
+SimpleVar ("a", _)
+
+MEM (BINOP (PLUS, TEMP fp, CONST k)) =&gt; + (TEMP fp, CONST k)
+
+- fp is the frame pointer in the register and k is the offset of v within the frame. Therefore, you can figure that this is the variable that is in "this" stack frame
+
+exp: access -&gt; Tree.exp -&gt; Tree.exp
+
+Frame.exp (a) (TEMP(Frame.FP)) = MEM(BINOP(PLUS, TEMP(Frame.FP), CONST(k)))
+</pre>
+</div>
+</div>
+<div id="outline-container-org1d63ff4" class="outline-4">
+<h4 id="org1d63ff4"><span class="section-number-4">1.3.1.</span> Following static links</h4>
+<div class="outline-text-4" id="text-1-3-1">
+<p>
+In the exp, the second exp passed is either the TEMP(Frame.FP) is the variable is being accessed from the same level as it is declared. But if being accesed from the nested function, we pass the static link to this. Now what is the static link?
+</p>
+
+<p>
+Static link links each one of the nested function to its parent. We calcualte the static link and pass this as the third parameter.
+</p>
+
+<p>
+Lets say the 2nd level nested function is accessing the variable a. then we pass
+</p>
+
+<p>
+Frame.exp (a) (MEM (+ (CONST k, TEMP fp)))
+</p>
+</div>
+</div>
+</div>
+<div id="outline-container-org8fd2eaf" class="outline-3">
+<h3 id="org8fd2eaf"><span class="section-number-3">1.4.</span> Array</h3>
+<div class="outline-text-3" id="text-1-4">
+<ul class="org-ul">
+<li>Array are stored in the heap and only the pointer is stored in memory.</li>
+<li><p>
+to convert expression,
+</p>
+
+<p>
+this is for a[i] where e is the starting address or e is stored in memory
+</p>
+<div class="org-src-container">
+<pre class="src src-nil">MEM(+(MEM((e), BINOP(MUL, I, CONST W)))
+</pre>
+</div></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-org123d8bd" class="outline-3">
+<h3 id="org123d8bd"><span class="section-number-3">1.5.</span> ARITHMETIC</h3>
+<div class="outline-text-3" id="text-1-5">
+<p>
+every Absyn has corrponsing tree
+</p>
+</div>
+</div>
+<div id="outline-container-org7688f7f" class="outline-3">
+<h3 id="org7688f7f"><span class="section-number-3">1.6.</span> CONDITIONS</h3>
+</div>
+</div>
 </div>
 <div id="postamble" class="status">
 <p class="creator"><a href="https://www.gnu.org/software/emacs/">Emacs</a> 31.0.50 (<a href="https://orgmode.org">Org</a> mode 9.7.9)</p>
