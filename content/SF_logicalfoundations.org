@@ -1,0 +1,3 @@
+#+title: Sf Logicalfoundations
+
+[[https://softwarefoundations.cis.upenn.edu/lf-current/index.html][Link to the book]]

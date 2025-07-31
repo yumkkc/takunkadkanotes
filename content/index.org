@@ -1,0 +1,9 @@
+#+title: Welcome to TakunKkadka Blogs
+
+I like PLT and mainly write about my various notes/learning from books, articles and such.
+
+* BOOK READING and INSIGHTS
+
+[[./plainotes.org][Programming Language Application and Interpretation (PLAI) book]]
+
+[[./SF_logicalfoundations.org][Software foundations book - Logical foundations]]

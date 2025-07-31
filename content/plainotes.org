@@ -1,0 +1,3 @@
+#+title: PLAI NOTES
+
+[[https://www.plai.org/][Link to the book]]
